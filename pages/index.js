@@ -1,209 +1,148 @@
-import Head from 'next/head'
+import React, { Component } from 'react';
 
-export default function Home() {
-  return (
-    <div className="container">
-      <Head>
-        <title>Create Next App</title>
-        <link rel="icon" href="/favicon.ico" />
-      </Head>
+import './index.less';
 
-      <main>
-        <h1 className="title">
-          Welcome to <a href="https://nextjs.org">Next.js!</a>
-        </h1>
 
-        <p className="description">
-          Get started by editing <code>pages/index.js</code>
-        </p>
+const TRIANGLE_SURFACE_LIMIT = 10000;
+const TRIANGLE_EDGE_LENGTH_LIMIT = 50;
 
-        <div className="grid">
-          <a href="https://nextjs.org/docs" className="card">
-            <h3>Documentation &rarr;</h3>
-            <p>Find in-depth information about Next.js features and API.</p>
-          </a>
 
-          <a href="https://nextjs.org/learn" className="card">
-            <h3>Learn &rarr;</h3>
-            <p>Learn about Next.js in an interactive course with quizzes!</p>
-          </a>
+export default class Home extends Component {
+    componentDidMount() {
+        let startingTriangle = [{ x: 0, y: 0 }, { x: 0, y: 300 }, { x: 400, y: 0 }];
+        let triangles = this.lowpolyze(startingTriangle);
 
-          <a
-            href="https://github.com/vercel/next.js/tree/master/examples"
-            className="card"
-          >
-            <h3>Examples &rarr;</h3>
-            <p>Discover and deploy boilerplate example Next.js projects.</p>
-          </a>
+        startingTriangle = [{ x: 0, y: 300 }, { x: 400, y: 300 }, { x: 400, y: 0 }];
+        triangles = [...triangles, ...this.lowpolyze(startingTriangle)];
 
-          <a
-            href="https://vercel.com/import?filter=next.js&utm_source=create-next-app&utm_medium=default-template&utm_campaign=create-next-app"
-            className="card"
-          >
-            <h3>Deploy &rarr;</h3>
-            <p>
-              Instantly deploy your Next.js site to a public URL with Vercel.
-            </p>
-          </a>
-        </div>
-      </main>
+        const context = this.canvas.getContext('2d');
 
-      <footer>
-        <a
-          href="https://vercel.com?utm_source=create-next-app&utm_medium=default-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Powered by{' '}
-          <img src="/vercel.svg" alt="Vercel Logo" className="logo" />
-        </a>
-      </footer>
+        triangles.forEach(triangle => {
+            const r = this.getRandomInt(0, 255);
+            const g = this.getRandomInt(0, 255);
+            const b = this.getRandomInt(0, 255);
 
-      <style jsx>{`
-        .container {
-          min-height: 100vh;
-          padding: 0 0.5rem;
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-          align-items: center;
+            context.fillStyle = `rgb(${r}, ${g}, ${b})`;
+            context.beginPath();
+            context.moveTo(triangle[0].x, triangle[0].y);
+            context.lineTo(triangle[1].x, triangle[1].y);
+            context.lineTo(triangle[2].x, triangle[2].y);
+            context.fill();
+            context.closePath();
+        });
+    }
+
+    lowpolyze = (startTriangle) => {
+        const triangleSurface = this.getTriangleSurface(startTriangle);
+        const distAB = this.getDist(startTriangle[0], startTriangle[1]);
+        const distAC = this.getDist(startTriangle[0], startTriangle[2]);
+        const distBC = this.getDist(startTriangle[1], startTriangle[2]);
+
+        if (
+            triangleSurface < TRIANGLE_SURFACE_LIMIT
+            || [distAB, distAC, distBC].find(dist => dist < TRIANGLE_EDGE_LENGTH_LIMIT)
+        ) {
+            return [startTriangle];
         }
 
-        main {
-          padding: 5rem 0;
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-          align-items: center;
+        const newABPoint = this.getRandomPointOnLine(startTriangle[0], startTriangle[1]);
+        const newACPoint = this.getRandomPointOnLine(startTriangle[0], startTriangle[2]);
+        const newBCPoint = this.getRandomPointOnLine(startTriangle[1], startTriangle[2]);
+
+        return [
+            [startTriangle[0], newABPoint, newACPoint],
+            [startTriangle[1], newABPoint, newBCPoint],
+            [startTriangle[2], newACPoint, newBCPoint],
+            [newABPoint, newACPoint, newBCPoint],
+        ].reduce((triangles, newTriangle) => {
+            return [...triangles, ...this.lowpolyze(newTriangle)];
+        }, []);
+    };
+
+    getRandomPointOnLine = (a, b) => {
+        const rand = this.getRandomFloat(0.2, 0.8);
+
+        if (a.x === b.x) {
+            return {
+                x: a.x,
+                y: (b.y - a.y) * rand + a.y,
+            }
         }
 
-        footer {
-          width: 100%;
-          height: 100px;
-          border-top: 1px solid #eaeaea;
-          display: flex;
-          justify-content: center;
-          align-items: center;
+        const coef = (b.y - a.y) / (b.x - a.x);
+        const x = (b.x - a.x) * rand + a.x;
+        const y = coef * (x - a.x) + a.y;
+
+        return { x, y };
+    };
+
+    getTriangleIncircleRadius = ([a, b, c]) => {
+        const distAB = this.getDist(a, b);
+        const distAC = this.getDist(a, c);
+        const distBC = this.getDist(b, c);
+        const p = (distAB + distAC + distBC) / 2;
+
+        return Math.round(Math.sqrt(p * (p - distAB) * (p - distAC) * (p - distBC)) / p);
+    };
+
+    getTriangleCentroid = ([a, b, c]) => {
+        return {
+            x: Math.round((a.x + b.x + c.x) / 3),
+            y: Math.round((a.y + b.y + c.y) / 3),
+        };
+    };
+
+    getTriangleSurface = ([a, b, c]) => {
+        return (0.5 * Math.abs((b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y)));
+    };
+
+    getRandomInt = (min, max) => {
+        return Math.floor(Math.random() * (max - min + 1)) + min;
+    };
+
+    getRandomFloat = (min, max) => {
+        return Math.random() * (max - min) + min;
+    };
+
+    getDist = (a, b) => {
+        return Math.round(Math.sqrt(Math.pow(b.x - a.x, 2) + Math.pow(b.y - a.y, 2)));
+    };
+
+    onUploadImage = (event) => {
+        const [file] = event.target.files;
+
+        if (!file) {
+            return;
         }
 
-        footer img {
-          margin-left: 0.5rem;
-        }
+        const context = this.canvas.getContext('2d');
+        const reader = new FileReader();
+        const img = new Image();
 
-        footer a {
-          display: flex;
-          justify-content: center;
-          align-items: center;
+        reader.readAsDataURL(file);
+        reader.onload = (readerEvent) => {
+            if (readerEvent.target.readyState === FileReader.DONE) {
+                img.src = readerEvent.target.result;
+                context.drawImage(img, 0, 0, 400, 300);
+            }
         }
+    };
 
-        a {
-          color: inherit;
-          text-decoration: none;
-        }
-
-        .title a {
-          color: #0070f3;
-          text-decoration: none;
-        }
-
-        .title a:hover,
-        .title a:focus,
-        .title a:active {
-          text-decoration: underline;
-        }
-
-        .title {
-          margin: 0;
-          line-height: 1.15;
-          font-size: 4rem;
-        }
-
-        .title,
-        .description {
-          text-align: center;
-        }
-
-        .description {
-          line-height: 1.5;
-          font-size: 1.5rem;
-        }
-
-        code {
-          background: #fafafa;
-          border-radius: 5px;
-          padding: 0.75rem;
-          font-size: 1.1rem;
-          font-family: Menlo, Monaco, Lucida Console, Liberation Mono,
-            DejaVu Sans Mono, Bitstream Vera Sans Mono, Courier New, monospace;
-        }
-
-        .grid {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-wrap: wrap;
-
-          max-width: 800px;
-          margin-top: 3rem;
-        }
-
-        .card {
-          margin: 1rem;
-          flex-basis: 45%;
-          padding: 1.5rem;
-          text-align: left;
-          color: inherit;
-          text-decoration: none;
-          border: 1px solid #eaeaea;
-          border-radius: 10px;
-          transition: color 0.15s ease, border-color 0.15s ease;
-        }
-
-        .card:hover,
-        .card:focus,
-        .card:active {
-          color: #0070f3;
-          border-color: #0070f3;
-        }
-
-        .card h3 {
-          margin: 0 0 1rem 0;
-          font-size: 1.5rem;
-        }
-
-        .card p {
-          margin: 0;
-          font-size: 1.25rem;
-          line-height: 1.5;
-        }
-
-        .logo {
-          height: 1em;
-        }
-
-        @media (max-width: 600px) {
-          .grid {
-            width: 100%;
-            flex-direction: column;
-          }
-        }
-      `}</style>
-
-      <style jsx global>{`
-        html,
-        body {
-          padding: 0;
-          margin: 0;
-          font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto,
-            Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue,
-            sans-serif;
-        }
-
-        * {
-          box-sizing: border-box;
-        }
-      `}</style>
-    </div>
-  )
+    render() {
+        return (
+            <div className='Home'>
+                <canvas
+                    ref={(canvas) => this.canvas = canvas}
+                    className='Home-canvas'
+                    height={300}
+                    width={400}
+                />
+                <input
+                    onChange={this.onUploadImage}
+                    accept='image/png, image/jpeg'
+                    type='file'
+                />
+            </div>
+        );
+    }
 }
